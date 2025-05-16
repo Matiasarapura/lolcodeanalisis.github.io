@@ -45,7 +45,13 @@
             <label for="player-select" class="control-label">Jugador (Eq. Principal):</label>
             <select id="player-select" disabled><option value="TODOS">-- Todos los Jugadores --</option></select>
         </div>
-         <div class="filter-group" style="grid-column: 1 / -1; display: flex; justify-content: center; gap: 1rem; padding-top: 0.5rem; align-items: center;">
+        
+        <div class="filter-group">
+            <label for="time-select" class="control-label">Tiempo del Juego:</label>
+            <select id="time-select"><option value="TODOS">-- Todo el Tiempo --</option></select>
+        </div>
+        
+        <div class="filter-group" style="grid-column: 1 / -1; display: flex; justify-content: center; gap: 1rem; padding-top: 0.5rem; align-items: center;">
             <button id="show-heatmap-btn" class="bg-sky-600 hover:bg-sky-700 px-8 py-2" style="width: auto;">Mostrar Mapa de Calor</button>
             <button id="clear-heatmap-btn" class="bg-red-600 hover:bg-red-700 px-8 py-2" style="width: auto;">Limpiar Mapa</button>
         </div>
@@ -65,6 +71,7 @@
         const seriesSelect = document.getElementById('series-select');
         const gameSelect = document.getElementById('game-select');
         const playerSelect = document.getElementById('player-select');
+        const timeSelect = document.getElementById('time-select');
         const showButton = document.getElementById('show-heatmap-btn');
         const clearButton = document.getElementById('clear-heatmap-btn');
         const loadingMessage = document.getElementById('loading-message');
@@ -176,33 +183,49 @@
             const selectedMainTeam = mainTeamSelect.value;
             const selectedSerieId = seriesSelect.value;
             gameSelect.innerHTML = '<option value="TODAS">-- Toda la Serie (Ambos Lados) --</option>';
-            gameSelect.disabled = (selectedSerieId === "TODAS");
+            gameSelect.disabled = (selectedMainTeam === "TODOS");
             playerSelect.innerHTML = '<option value="TODOS">-- Todos los Jugadores --</option>'; 
             playerSelect.disabled = (selectedMainTeam === "TODOS");
 
-
-            if (selectedSerieId !== "TODAS" && structuredSeriesData[selectedSerieId]) {
-                const serieData = structuredSeriesData[selectedSerieId];
-                const partidasOrdenadas = Object.entries(serieData.partidas)
-                    .sort(([,a],[,b]) => a.gameNumberInSerie - b.gameNumberInSerie);
-
-                partidasOrdenadas.forEach(([gameFileName, gameData]) => {
-                    let ladoEquipoPrincipalTexto = "";
-                    let ladoEquipoPrincipalId = "TODOS"; 
-                    if (gameData.equipoEnLadoAzul === selectedMainTeam) {
-                        ladoEquipoPrincipalTexto = "(Lado Azul)";
-                        ladoEquipoPrincipalId = "100";
-                    } else if (gameData.equipoEnLadoRojo === selectedMainTeam) {
-                        ladoEquipoPrincipalTexto = "(Lado Rojo)";
-                        ladoEquipoPrincipalId = "200";
-                    }
-                    const option = document.createElement('option');
-                    option.value = gameFileName; 
-                    option.textContent = `Juego ${gameData.gameNumberInSerie} ${ladoEquipoPrincipalTexto}`;
-                    option.dataset.mainTeamSide = ladoEquipoPrincipalId; 
-                    gameSelect.appendChild(option);
+            // Get all games from all series if no specific series is selected
+            let allGames = [];
+            if (selectedSerieId === "TODAS") {
+                // Collect games from all series
+                Object.values(structuredSeriesData).forEach(serieData => {
+                    Object.entries(serieData.partidas).forEach(([gameFileName, gameData]) => {
+                        allGames.push({ gameFileName, gameData });
+                    });
                 });
+            } else if (structuredSeriesData[selectedSerieId]) {
+                // Get games from selected series
+                const serieData = structuredSeriesData[selectedSerieId];
+                allGames = Object.entries(serieData.partidas).map(([gameFileName, gameData]) => ({
+                    gameFileName,
+                    gameData
+                }));
             }
+
+            // Sort games by game number
+            allGames.sort((a, b) => a.gameData.gameNumberInSerie - b.gameData.gameNumberInSerie);
+
+            // Add games to selector
+            allGames.forEach(({ gameFileName, gameData }) => {
+                let ladoEquipoPrincipalTexto = "";
+                let ladoEquipoPrincipalId = "TODOS"; 
+                if (gameData.equipoEnLadoAzul === selectedMainTeam) {
+                    ladoEquipoPrincipalTexto = "(Lado Azul)";
+                    ladoEquipoPrincipalId = "100";
+                } else if (gameData.equipoEnLadoRojo === selectedMainTeam) {
+                    ladoEquipoPrincipalTexto = "(Lado Rojo)";
+                    ladoEquipoPrincipalId = "200";
+                }
+                const option = document.createElement('option');
+                option.value = gameFileName; 
+                option.textContent = `Juego ${gameData.gameNumberInSerie} ${ladoEquipoPrincipalTexto}`;
+                option.dataset.mainTeamSide = ladoEquipoPrincipalId; 
+                gameSelect.appendChild(option);
+            });
+
             updatePlayerSelector(); 
         }
         
@@ -238,6 +261,22 @@
             console.log(`Selector de jugadores actualizado. Jugadores listados:`, playerNames);
         }
 
+        function populateTimeSelector() {
+            timeSelect.innerHTML = '<option value="TODOS">-- Todo el Tiempo --</option>';
+            
+            // Create time intervals from 0 to 8:30 (510 seconds)
+            for (let seconds = 0; seconds <= 510; seconds += 30) {
+                const minutes = Math.floor(seconds / 60);
+                const remainingSeconds = seconds % 60;
+                const timeString = `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+                const option = document.createElement('option');
+                // Convert seconds to milliseconds for the value
+                option.value = seconds * 1000;
+                option.textContent = timeString;
+                timeSelect.appendChild(option);
+            }
+        }
+
         mainTeamSelect.addEventListener('change', updateSeriesSelector);
         seriesSelect.addEventListener('change', updateGameSelector);
         gameSelect.addEventListener('change', updatePlayerSelector); 
@@ -253,6 +292,7 @@
             const selSerieId = seriesSelect.value;
             const selGameFile = gameSelect.value;
             const selPlayer = playerSelect.value;
+            const selTime = timeSelect.value;
             let sideForFiltering = "TODOS"; 
 
             if (selMainTeam !== "TODOS") {
@@ -263,20 +303,29 @@
             }
             
             if (selGameFile !== "TODAS") {
-                 pointsToDisplay = pointsToDisplay.filter(w => w.gameFileName === selGameFile);
-                 const gameOption = Array.from(gameSelect.options).find(opt => opt.value === selGameFile);
-                 if (gameOption && gameOption.dataset.mainTeamSide && gameOption.dataset.mainTeamSide !== "TODOS") {
-                     sideForFiltering = gameOption.dataset.mainTeamSide;
-                     pointsToDisplay = pointsToDisplay.filter(w => String(w.teamIdInGame) === sideForFiltering && w.actualTeamName === selMainTeam);
-                 }
+                pointsToDisplay = pointsToDisplay.filter(w => w.gameFileName === selGameFile);
+                const gameOption = Array.from(gameSelect.options).find(opt => opt.value === selGameFile);
+                if (gameOption && gameOption.dataset.mainTeamSide && gameOption.dataset.mainTeamSide !== "TODOS") {
+                    sideForFiltering = gameOption.dataset.mainTeamSide;
+                    pointsToDisplay = pointsToDisplay.filter(w => String(w.teamIdInGame) === sideForFiltering && w.actualTeamName === selMainTeam);
+                }
             }
             
             if (selPlayer !== "TODOS") {
                 pointsToDisplay = pointsToDisplay.filter(p => p.playerName === selPlayer);
             }
+
+            // Add time filtering
+            if (selTime !== "TODOS") {
+                const timeValue = parseInt(selTime);
+                pointsToDisplay = pointsToDisplay.filter(w => {
+                    const gameTime = w.gameTime;
+                    return gameTime >= timeValue && gameTime < timeValue + 30000; // 30000 ms = 30 seconds
+                });
+            }
             
-            console.log(`Mostrando ${pointsToDisplay.length} puntos con filtros: Eq=${selMainTeam}, Serie=${selSerieId}, Juego=${selGameFile}, LadoImplicito=${sideForFiltering}, Jugador=${selPlayer}`);
-            heatmapInstance.setData({ max: HEATMAP_POINT_VALUE, data: pointsToDisplay  });
+            console.log(`Mostrando ${pointsToDisplay.length} puntos con filtros: Eq=${selMainTeam}, Serie=${selSerieId}, Juego=${selGameFile}, LadoImplicito=${sideForFiltering}, Jugador=${selPlayer}, Tiempo=${selTime}`);
+            heatmapInstance.setData({ max: HEATMAP_POINT_VALUE, data: pointsToDisplay });
         });
 
         clearButton.addEventListener('click', () => { if (heatmapInstance) heatmapInstance.setData({ max: HEATMAP_POINT_VALUE, data: [] }); });
@@ -285,6 +334,7 @@
             console.log("DOM cargado. Iniciando carga de datos.");
             if (mapImage.offsetWidth > 0 && mapImage.offsetHeight > 0) setupHeatmap();
             loadAndStructureData();
+            populateTimeSelector();
         });
         
         window.onresize = () => {
@@ -297,8 +347,3 @@
     </script>
 </body>
 </html>
-
-         <div class="filter-group" style="grid-column: 1 / -1; display: flex; justify-content: center; gap: 1rem; padding-top: 0.5rem; align-items: center;">
-            <button id="show-heatmap-btn" class="bg-sky-600 hover:bg-sky-700 px-8 py-2" style="width: auto;">Mostrar Mapa de Calor</button>
-            <button id="clear-heatmap-btn" class="bg-red-600 hover:bg-red-700 px-8 py-2" style="width: auto;">Limpiar Mapa</button>
-        </div>

@@ -196,7 +196,7 @@ async function processAllGameData() {
                                 x: pixelX, y: pixelY, value: HEATMAP_POINT_VALUE,
                                 gameTime: gameTime,
                                 playerName: p.playerName,
-                                teamIdInGame: p.teamIdInGame, 
+                                teamIdInGame: p.teamID, 
                                 actualTeamName: getTeamPrefixFromPlayerName(p.playerName),
                                 serieId: seriesInfo.serieId,
                                 gameNumberInSerie: seriesInfo.gameNumberInSerie,
