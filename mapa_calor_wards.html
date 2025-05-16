@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análisis Avanzado de Guardianes LoL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/heatmap.js/2.0.2/heatmap.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #1a202c; color: #e2e8f0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 1rem; }
+        .controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; background-color: #2d3748; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); width: 100%; max-width: 1000px; margin-bottom: 1.5rem; }
+        .filter-group { display: flex; flex-direction: column; gap: 0.25rem; }
+        .control-label { font-weight: 500; color: #a0aec0; display: block; margin-bottom: 0.1rem; font-size: 0.85rem; }
+        select, button { background-color: #4a5568; color: #e2e8f0; border: 1px solid #718096; border-radius: 6px; padding: 8px 12px; font-size: 0.9rem; width: 100%; box-sizing: border-box; }
+        select:focus, button:focus { outline: none; border-color: #63b3ed; box-shadow: 0 0 0 2px rgba(99, 179, 237, 0.3); }
+        button { cursor: pointer; font-weight: 600; }
+        .map-container { position: relative; width: 512px; height: 512px; margin: 10px auto; border: 3px solid #4a5568; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.4); }
+        #ward-map-image { width: 100%; height: 100%; display: block; border-radius: 9px; position: absolute; top: 0; left: 0; z-index: 1; }
+        #heatmap-container { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 2; }
+        #heatmap-container canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 3; }
+        #loading-message { color: #9ae6b4; text-align: center; margin-bottom: 1rem; min-height: 1.5em; width:100%; grid-column: 1 / -1; } /* Span all columns */
+    </style>
+</head>
+<body>
+    <div class="controls-grid">
+        <div id="loading-message">Cargando datos...</div>
+        
+        <div class="filter-group">
+            <label for="main-team-select" class="control-label">Equipo Principal:</label>
+            <select id="main-team-select"><option value="TODOS">-- Todos los Equipos --</option></select>
+        </div>
+
+        <div class="filter-group">
+            <label for="series-select" class="control-label">Serie (vs Oponente):</label>
+            <select id="series-select" disabled><option value="TODAS">-- Todas las Series --</option></select>
+        </div>
+
+        <div class="filter-group">
+            <label for="game-select" class="control-label">Partida de la Serie:</label>
+            <select id="game-select" disabled><option value="TODAS">-- Toda la Serie (Ambos Lados) --</option></select>
+        </div>
+        
+        <div class="filter-group">
+            <label for="player-select" class="control-label">Jugador (Eq. Principal):</label>
+            <select id="player-select" disabled><option value="TODOS">-- Todos los Jugadores --</option></select>
+        </div>
+         <div class="filter-group" style="grid-column: 1 / -1; display: flex; justify-content: center; gap: 1rem; padding-top: 0.5rem; align-items: center;">
+            <button id="show-heatmap-btn" class="bg-sky-600 hover:bg-sky-700 px-8 py-2" style="width: auto;">Mostrar Mapa de Calor</button>
+            <button id="clear-heatmap-btn" class="bg-red-600 hover:bg-red-700 px-8 py-2" style="width: auto;">Limpiar Mapa</button>
+        </div>
+    </div>
+
+    <div class="map-container">
+        <img id="ward-map-image" src="Summoner's_Rift_Minimap.png" alt="Minimapa">
+        <div id="heatmap-container"></div>
+        <div class="tooltip"></div>
+    </div>
+    
+    <script>
+        let heatmapInstance = null;
+        const heatmapContainer = document.getElementById('heatmap-container');
+        const mapImage = document.getElementById('ward-map-image');
+        const mainTeamSelect = document.getElementById('main-team-select');
+        const seriesSelect = document.getElementById('series-select');
+        const gameSelect = document.getElementById('game-select');
+        const playerSelect = document.getElementById('player-select');
+        const showButton = document.getElementById('show-heatmap-btn');
+        const clearButton = document.getElementById('clear-heatmap-btn');
+        const loadingMessage = document.getElementById('loading-message');
+
+        const HEATMAP_POINT_VALUE = 100;
+        let allWardEventsData = []; 
+        let structuredSeriesData = {}; 
+
+        function setupHeatmap() {
+            if (!heatmapContainer || !mapImage) return;
+            const imageWidth = mapImage.offsetWidth;
+            const imageHeight = mapImage.offsetHeight;
+            if (imageWidth === 0 || imageHeight === 0) { console.warn("setupHeatmap: Dimensiones de imagen 0"); return;}
+            heatmapContainer.style.width = imageWidth + 'px';
+            heatmapContainer.style.height = imageHeight + 'px';
+            if (!heatmapInstance) {
+                heatmapInstance = h337.create({
+                    container: heatmapContainer, radius: 15, maxOpacity: 0.55, minOpacity: 0.05, blur: .80,
+                    gradient: {'.3': "rgba(0,0,255,.5)", '.5': "rgba(0,255,255,.6)", '.7': "rgba(0,255,0,.7)", '.9':"rgba(255,255,0,.8)", '1': "rgba(255,0,0,.9)" }
+                });
+            }
+        }
+
+        if (mapImage.complete && mapImage.naturalWidth > 0) { setupHeatmap(); } 
+        else { mapImage.onload = setupHeatmap; mapImage.onerror = () => console.error("Error img load"); }
+
+        async function loadAndStructureData() {
+            loadingMessage.textContent = 'Cargando y estructurando datos...';
+            loadingMessage.style.display = 'block';
+            try {
+                const response = await fetch('heatmap_final_data.json'); 
+                if (!response.ok) throw new Error(`Error HTTP: ${response.status} al cargar heatmap_final_data.json`);
+                allWardEventsData = await response.json(); 
+                console.log(`Total ${allWardEventsData.length} eventos de guardianes cargados.`);
+                
+                const seriesMap = new Map();
+                allWardEventsData.forEach(ward => {
+                    if (!seriesMap.has(ward.serieId)) {
+                        const teamsInThisSerie = new Set();
+                        allWardEventsData.filter(w => w.serieId === ward.serieId)
+                                         .forEach(wLocal => teamsInThisSerie.add(wLocal.actualTeamName));
+                        
+                        const sortedTeamsInSerie = Array.from(teamsInThisSerie)
+                                                    .filter(name => name && name !== "EquipoSinTag" && !name.startsWith("EquipoDesconocido") && !name.startsWith("EquipoIndividual"))
+                                                    .sort();
+                        seriesMap.set(ward.serieId, { 
+                            equipo1: sortedTeamsInSerie[0] || "EquipoA_Serie?", 
+                            equipo2: sortedTeamsInSerie[1] || "EquipoB_Serie?", 
+                            partidas: {} 
+                        });
+                    }
+                    const serie = seriesMap.get(ward.serieId);
+                    if (!serie.partidas[ward.gameFileName]) {
+                        serie.partidas[ward.gameFileName] = {
+                            gameNumberInSerie: ward.gameNumberInSerie,
+                            equipoEnLadoAzul: allWardEventsData.find(w => w.gameFileName === ward.gameFileName && w.teamIdInGame === 100)?.actualTeamName || "Azul?",
+                            equipoEnLadoRojo: allWardEventsData.find(w => w.gameFileName === ward.gameFileName && w.teamIdInGame === 200)?.actualTeamName || "Rojo?",
+                        };
+                    }
+                });
+                structuredSeriesData = Object.fromEntries(seriesMap);
+                console.log("Datos estructurados por series:", structuredSeriesData);
+
+                populateMainTeamSelector();
+                loadingMessage.textContent = 'Datos listos.';
+            } catch (error) {
+                console.error("Error cargando/estructurando datos:", error);
+                loadingMessage.textContent = `Error: ${error.message}`;
+            } finally {
+                setTimeout(() => { if (loadingMessage.textContent.startsWith('Datos listos')) loadingMessage.style.display = 'none'; }, 1000);
+            }
+        }
+
+        function populateMainTeamSelector() {
+            const teamNames = [...new Set(allWardEventsData.map(w => w.actualTeamName)
+                                .filter(name => name && name !== "EquipoSinTag" && !name.startsWith("EquipoDesconocido") && !name.startsWith("EquipoIndividual")) )].sort();
+            mainTeamSelect.innerHTML = '<option value="TODOS">-- Todos los Equipos --</option>';
+            teamNames.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name; option.textContent = name;
+                mainTeamSelect.appendChild(option);
+            });
+            updateSeriesSelector(); 
+        }
+
+        function updateSeriesSelector() {
+            const selectedMainTeam = mainTeamSelect.value;
+            seriesSelect.innerHTML = '<option value="TODAS">-- Todas las Series --</option>';
+            seriesSelect.disabled = (selectedMainTeam === "TODOS");
+            
+            if (selectedMainTeam !== "TODOS") {
+                const teamSeries = Object.entries(structuredSeriesData)
+                    .filter(([serieId, serieData]) => serieData.equipo1 === selectedMainTeam || serieData.equipo2 === selectedMainTeam)
+                    .map(([serieId, serieData]) => {
+                        const oponente = serieData.equipo1 === selectedMainTeam ? serieData.equipo2 : serieData.equipo1;
+                        return { id: serieId, displayText: `vs ${oponente && oponente !== "EquipoB_Serie?" ? oponente : "Oponente Desconocido"} (ID Serie: ${serieId})` };
+                    });
+                
+                teamSeries.forEach(serie => {
+                    const option = document.createElement('option');
+                    option.value = serie.id; option.textContent = serie.displayText;
+                    seriesSelect.appendChild(option);
+                });
+            }
+            updateGameSelector();
+        }
+
+        function updateGameSelector() {
+            const selectedMainTeam = mainTeamSelect.value;
+            const selectedSerieId = seriesSelect.value;
+            gameSelect.innerHTML = '<option value="TODAS">-- Toda la Serie (Ambos Lados) --</option>';
+            gameSelect.disabled = (selectedSerieId === "TODAS");
+            playerSelect.innerHTML = '<option value="TODOS">-- Todos los Jugadores --</option>'; 
+            playerSelect.disabled = (selectedMainTeam === "TODOS");
+
+
+            if (selectedSerieId !== "TODAS" && structuredSeriesData[selectedSerieId]) {
+                const serieData = structuredSeriesData[selectedSerieId];
+                const partidasOrdenadas = Object.entries(serieData.partidas)
+                    .sort(([,a],[,b]) => a.gameNumberInSerie - b.gameNumberInSerie);
+
+                partidasOrdenadas.forEach(([gameFileName, gameData]) => {
+                    let ladoEquipoPrincipalTexto = "";
+                    let ladoEquipoPrincipalId = "TODOS"; 
+                    if (gameData.equipoEnLadoAzul === selectedMainTeam) {
+                        ladoEquipoPrincipalTexto = "(Lado Azul)";
+                        ladoEquipoPrincipalId = "100";
+                    } else if (gameData.equipoEnLadoRojo === selectedMainTeam) {
+                        ladoEquipoPrincipalTexto = "(Lado Rojo)";
+                        ladoEquipoPrincipalId = "200";
+                    }
+                    const option = document.createElement('option');
+                    option.value = gameFileName; 
+                    option.textContent = `Juego ${gameData.gameNumberInSerie} ${ladoEquipoPrincipalTexto}`;
+                    option.dataset.mainTeamSide = ladoEquipoPrincipalId; 
+                    gameSelect.appendChild(option);
+                });
+            }
+            updatePlayerSelector(); 
+        }
+        
+        function updatePlayerSelector() {
+            const selectedMainTeam = mainTeamSelect.value;
+            const selectedSerieId = seriesSelect.value;
+            const selectedGameFile = gameSelect.value;
+            
+            playerSelect.innerHTML = '<option value="TODOS">-- Todos los Jugadores --</option>';
+            playerSelect.disabled = (selectedMainTeam === "TODOS");
+
+            if (selectedMainTeam === "TODOS") return;
+
+            let wardsToConsiderForPlayers = allWardEventsData.filter(w => w.actualTeamName === selectedMainTeam);
+
+            if (selectedSerieId !== "TODAS") {
+                wardsToConsiderForPlayers = wardsToConsiderForPlayers.filter(w => w.serieId === selectedSerieId);
+            }
+            if (selectedGameFile !== "TODAS") {
+                wardsToConsiderForPlayers = wardsToConsiderForPlayers.filter(w => w.gameFileName === selectedGameFile);
+                const gameOption = Array.from(gameSelect.options).find(opt => opt.value === selectedGameFile);
+                if (gameOption && gameOption.dataset.mainTeamSide && gameOption.dataset.mainTeamSide !== "TODOS") {
+                     wardsToConsiderForPlayers = wardsToConsiderForPlayers.filter(w => String(w.teamIdInGame) === gameOption.dataset.mainTeamSide);
+                }
+            }
+            
+            const playerNames = [...new Set(wardsToConsiderForPlayers.map(p => p.playerName).filter(n => n))].sort();
+            playerNames.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name; option.textContent = name;
+                playerSelect.appendChild(option);
+            });
+            console.log(`Selector de jugadores actualizado. Jugadores listados:`, playerNames);
+        }
+
+        mainTeamSelect.addEventListener('change', updateSeriesSelector);
+        seriesSelect.addEventListener('change', updateGameSelector);
+        gameSelect.addEventListener('change', updatePlayerSelector); 
+
+        showButton.addEventListener('click', () => {
+            if (!heatmapInstance) {
+                if (mapImage.complete && mapImage.naturalWidth > 0) setupHeatmap();
+                if (!heatmapInstance) { alert("Heatmap no inicializado."); return; }
+            }
+
+            let pointsToDisplay = allWardEventsData;
+            const selMainTeam = mainTeamSelect.value;
+            const selSerieId = seriesSelect.value;
+            const selGameFile = gameSelect.value;
+            const selPlayer = playerSelect.value;
+            let sideForFiltering = "TODOS"; 
+
+            if (selMainTeam !== "TODOS") {
+                pointsToDisplay = pointsToDisplay.filter(w => w.actualTeamName === selMainTeam);
+            }
+            if (selSerieId !== "TODAS") {
+                pointsToDisplay = pointsToDisplay.filter(w => w.serieId === selSerieId);
+            }
+            
+            if (selGameFile !== "TODAS") {
+                 pointsToDisplay = pointsToDisplay.filter(w => w.gameFileName === selGameFile);
+                 const gameOption = Array.from(gameSelect.options).find(opt => opt.value === selGameFile);
+                 if (gameOption && gameOption.dataset.mainTeamSide && gameOption.dataset.mainTeamSide !== "TODOS") {
+                     sideForFiltering = gameOption.dataset.mainTeamSide;
+                     pointsToDisplay = pointsToDisplay.filter(w => String(w.teamIdInGame) === sideForFiltering && w.actualTeamName === selMainTeam);
+                 }
+            }
+            
+            if (selPlayer !== "TODOS") {
+                pointsToDisplay = pointsToDisplay.filter(p => p.playerName === selPlayer);
+            }
+            
+            console.log(`Mostrando ${pointsToDisplay.length} puntos con filtros: Eq=${selMainTeam}, Serie=${selSerieId}, Juego=${selGameFile}, LadoImplicito=${sideForFiltering}, Jugador=${selPlayer}`);
+            heatmapInstance.setData({ max: HEATMAP_POINT_VALUE, data: pointsToDisplay  });
+        });
+
+        clearButton.addEventListener('click', () => { if (heatmapInstance) heatmapInstance.setData({ max: HEATMAP_POINT_VALUE, data: [] }); });
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM cargado. Iniciando carga de datos.");
+            if (mapImage.offsetWidth > 0 && mapImage.offsetHeight > 0) setupHeatmap();
+            loadAndStructureData();
+        });
+        
+        window.onresize = () => {
+            if (mapImage.offsetWidth > 0 && mapImage.offsetHeight > 0) {
+                setupHeatmap(); 
+                showButton.click();
+            }
+        };
+
+    </script>
+</body>
+</html>
+
+         <div class="filter-group" style="grid-column: 1 / -1; display: flex; justify-content: center; gap: 1rem; padding-top: 0.5rem; align-items: center;">
+            <button id="show-heatmap-btn" class="bg-sky-600 hover:bg-sky-700 px-8 py-2" style="width: auto;">Mostrar Mapa de Calor</button>
+            <button id="clear-heatmap-btn" class="bg-red-600 hover:bg-red-700 px-8 py-2" style="width: auto;">Limpiar Mapa</button>
+        </div>
