@@ -48,6 +48,15 @@
             <label for="game-select" class="control-label">Partida de la Serie:</label>
             <select id="game-select" disabled><option value="TODAS">-- Toda la Serie (Ambos Lados) --</option></select>
         </div>
+
+        <div class="filter-group">
+            <label for="side-select" class="control-label">Lado del Mapa:</label>
+            <select id="side-select">
+                <option value="TODOS">-- Ambos Lados --</option>
+                <option value="100">Lado Azul</option>
+                <option value="200">Lado Rojo</option>
+            </select>
+        </div>
         
         <div class="filter-group">
             <label for="player-select" class="control-label">Jugador (Eq. Principal):</label>
@@ -79,6 +88,7 @@
         const mainTeamSelect = document.getElementById('main-team-select');
         const seriesSelect = document.getElementById('series-select');
         const gameSelect = document.getElementById('game-select');
+        const sideSelect = document.getElementById('side-select');
         const playerSelect = document.getElementById('player-select');
         const timeSelect = document.getElementById('time-select');
         const showButton = document.getElementById('show-heatmap-btn');
@@ -221,20 +231,23 @@
 
             // Add games to selector
             allGames.forEach(({ gameFileName, gameData }) => {
-                let ladoEquipoPrincipalTexto = "";
-                let ladoEquipoPrincipalId = "TODOS"; 
-                if (gameData.equipoEnLadoAzul === selectedMainTeam) {
-                    ladoEquipoPrincipalTexto = "(Lado Azul)";
-                    ladoEquipoPrincipalId = "100";
-                } else if (gameData.equipoEnLadoRojo === selectedMainTeam) {
-                    ladoEquipoPrincipalTexto = "(Lado Rojo)";
-                    ladoEquipoPrincipalId = "200";
+                // Only add option if the selected team is in this game
+                if (gameData.equipoEnLadoAzul === selectedMainTeam || gameData.equipoEnLadoRojo === selectedMainTeam) {
+                    let ladoEquipoPrincipalTexto = "";
+                    let ladoEquipoPrincipalId = "TODOS"; 
+                    if (gameData.equipoEnLadoAzul === selectedMainTeam) {
+                        ladoEquipoPrincipalTexto = "(Lado Azul)";
+                        ladoEquipoPrincipalId = "100";
+                    } else if (gameData.equipoEnLadoRojo === selectedMainTeam) {
+                        ladoEquipoPrincipalTexto = "(Lado Rojo)";
+                        ladoEquipoPrincipalId = "200";
+                    }
+                    const option = document.createElement('option');
+                    option.value = gameFileName; 
+                    option.textContent = `Juego ${gameData.gameNumberInSerie} ${ladoEquipoPrincipalTexto}`;
+                    option.dataset.mainTeamSide = ladoEquipoPrincipalId; 
+                    gameSelect.appendChild(option);
                 }
-                const option = document.createElement('option');
-                option.value = gameFileName; 
-                option.textContent = `Juego ${gameData.gameNumberInSerie} ${ladoEquipoPrincipalTexto}`;
-                option.dataset.mainTeamSide = ladoEquipoPrincipalId; 
-                gameSelect.appendChild(option);
             });
 
             updatePlayerSelector(); 
@@ -304,6 +317,7 @@
             const selGameFile = gameSelect.value;
             const selPlayer = playerSelect.value;
             const selTime = timeSelect.value;
+            const selSide = sideSelect.value;
             let sideForFiltering = "TODOS"; 
 
             if (selMainTeam !== "TODOS") {
@@ -320,6 +334,11 @@
                     sideForFiltering = gameOption.dataset.mainTeamSide;
                     pointsToDisplay = pointsToDisplay.filter(w => String(w.teamIdInGame) === sideForFiltering && w.actualTeamName === selMainTeam);
                 }
+            }
+
+            // Add side filtering
+            if (selSide !== "TODOS") {
+                pointsToDisplay = pointsToDisplay.filter(w => String(w.teamIdInGame) === selSide);
             }
             
             if (selPlayer !== "TODOS") {
