@@ -302,7 +302,16 @@
         }
 
         mainTeamSelect.addEventListener('change', updateSeriesSelector);
-        seriesSelect.addEventListener('change', updateGameSelector);
+        seriesSelect.addEventListener('change', () => {
+            updateGameSelector();
+            // Disable and reset side selector when a series is selected
+            if (seriesSelect.value !== "TODAS") {
+                sideSelect.value = "TODOS";
+                sideSelect.disabled = true;
+            } else {
+                sideSelect.disabled = false;
+            }
+        });
         gameSelect.addEventListener('change', updatePlayerSelector); 
 
         showButton.addEventListener('click', () => {
