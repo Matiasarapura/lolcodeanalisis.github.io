@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Análisis Avanzado de Guardianes LoL</title>
+    <title>Análisis Avanzado de TRACKING LoL</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/heatmap.js/2.0.2/heatmap.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -26,6 +26,14 @@
     <div class="controls-grid">
         <div id="loading-message">Cargando datos...</div>
         
+        <div class="filter-group">
+            <label for="data-type-select" class="control-label">Tipo de Datos:</label>
+            <select id="data-type-select">
+                <option value="wards">Wards</option>
+                <option value="tracking">Tracking</option>
+            </select>
+        </div>
+
         <div class="filter-group">
             <label for="main-team-select" class="control-label">Equipo Principal:</label>
             <select id="main-team-select"><option value="TODOS">-- Todos los Equipos --</option></select>
@@ -67,6 +75,7 @@
         let heatmapInstance = null;
         const heatmapContainer = document.getElementById('heatmap-container');
         const mapImage = document.getElementById('ward-map-image');
+        const dataTypeSelect = document.getElementById('data-type-select');
         const mainTeamSelect = document.getElementById('main-team-select');
         const seriesSelect = document.getElementById('series-select');
         const gameSelect = document.getElementById('game-select');
@@ -102,10 +111,12 @@
             loadingMessage.textContent = 'Cargando y estructurando datos...';
             loadingMessage.style.display = 'block';
             try {
-                const response = await fetch('heatmap_final_data.json'); 
-                if (!response.ok) throw new Error(`Error HTTP: ${response.status} al cargar heatmap_final_data.json`);
-                allWardEventsData = await response.json(); 
-                console.log(`Total ${allWardEventsData.length} eventos de guardianes cargados.`);
+                const dataType = dataTypeSelect.value;
+                const dataFile = dataType === 'wards' ? 'heatmap_wards_data.json' : 'heatmap_tracking_data.json';
+                const response = await fetch(dataFile);
+                if (!response.ok) throw new Error(`Error HTTP: ${response.status} al cargar ${dataFile}`);
+                allWardEventsData = await response.json();
+                console.log(`Total ${allWardEventsData.length} eventos de ${dataType} cargados.`);
                 
                 const seriesMap = new Map();
                 allWardEventsData.forEach(ward => {
@@ -329,6 +340,10 @@
         });
 
         clearButton.addEventListener('click', () => { if (heatmapInstance) heatmapInstance.setData({ max: HEATMAP_POINT_VALUE, data: [] }); });
+        
+        dataTypeSelect.addEventListener('change', () => {
+            loadAndStructureData();
+        });
         
         window.addEventListener('DOMContentLoaded', () => {
             console.log("DOM cargado. Iniciando carga de datos.");

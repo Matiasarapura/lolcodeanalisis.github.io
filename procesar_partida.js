@@ -5,12 +5,11 @@
 const fs = require('fs');
 const path = require('path');
 
+const EVENT = "ward_placed";
+const MODE = "EVENT"; // "EVENT" o "TIME"
 // --- CONFIGURACIÓN ---
 const inputFolder = path.join(__dirname, 'partidas_jsonl'); 
-const outputFile = path.join(__dirname, 'heatmap_final_data.json'); // Archivo de salida para la app web
-
-const EVENT = "ward_placed";
-const MODE = "TIME"; // "EVENT" o "TIME"
+const outputFile = path.join(__dirname, MODE === "TIME" ? 'heatmap_tracking_data.json' : 'heatmap_wards_data.json'); // Archivo de salida para la app web
 
 const GAMES_TIMES = 500000 // 8:30
 
